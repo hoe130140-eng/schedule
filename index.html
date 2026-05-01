@@ -6,6 +6,237 @@
 <title>Work Schedule 2026</title>
 
 <style>
+  :root {
+    --primary: #007aff;
+    --bg: #f2f2f7;
+  }
+  body { font-family:-apple-system, sans-serif; margin:0; background:var(--bg); color:#1c1c1e; }
+  
+  /* 헤더 */
+  header { 
+    padding: 20px; text-align:center; background:white; 
+    border-bottom:1px solid #ddd; position: sticky; top:0; z-index:10;
+  }
+  #title { font-size:20px; font-weight:bold; color:var(--primary); }
+  #subtitle { font-size:12px; color:#888; margin-top:4px; }
+
+  /* 달력 그리드 */
+  .weekday-row {
+    display: grid; grid-template-columns: repeat(7, 1fr);
+    background: white; padding: 10px 0; border-bottom: 1px solid #eee;
+    text-align: center; font-size: 12px; font-weight: bold; color: #8e8e93;
+  }
+  .calendar { display:grid; grid-template-columns: repeat(7, 1fr); gap:1px; background:#ddd; }
+
+  /* 날짜 칸 */
+  .day {
+    background:white; min-height:100px; padding:6px;
+    display:flex; flex-direction:column; gap:2px;
+  }
+  .day b { font-size:14px; margin-bottom:4px; }
+  .day:active { background:#f0f0f0; }
+
+  /* 근무 라벨 */
+  .shift-tag {
+    padding: 2px 4px; border-radius: 4px; font-size: 10px; font-weight: 600;
+    border-left: 3px solid rgba(0,0,0,0.1); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .pink {background:#ffd6e7; color:#d63384;}
+  .lavender {background:#e6dcff; color:#6f42c1;}
+  .mint {background:#d6fff5; color:#0f5132;}
+  .off {background:#f3e5d8; color:#856404;}
+  .vacation {background:#dfffdc; color:#155724;}
+  .etc {background:#e1f5fe; color:#0288d1;}
+
+  /* 팝업 모달 */
+  .overlay { position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.5); display:none; z-index:100; }
+  .popup {
+    position:fixed; bottom:0; left:0; right:0; background:white; 
+    padding:20px; border-radius:20px 20px 0 0; display:none; z-index:101;
+  }
+  .section-title { font-size: 14px; font-weight: bold; margin: 15px 0 8px 0; color: #666; }
+  .btn-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+  
+  button {
+    padding: 12px 5px; border: none; border-radius: 10px; 
+    background: #f2f2f7; font-size: 13px; cursor: pointer;
+  }
+  button.active { background: var(--primary); color: white; }
+  .save-btn { background: var(--primary); color: white; width: 100%; margin-top: 20px; font-weight: bold; padding: 15px; }
+  .del-btn { background: #ff3b30; color: white; width: 100%; margin-top: 8px; }
+</style>
+</head>
+<body>
+
+<header>
+  <div id="title">2026.05 Schedule</div>
+  <div id="subtitle">날짜를 눌러 근무를 입력하세요</div>
+</header>
+
+<div class="weekday-row">
+  <div style="color:#ff3b30">일</div><div>월</div><div>화</div><div>수</div><div>목</div><div>금</div><div style="color:var(--primary)">토</div>
+</div>
+
+<div class="calendar" id="calendar"></div>
+
+<div id="overlay" class="overlay"></div>
+<div id="popup" class="popup">
+  <h3 id="targetDate" style="margin-top:0">5월 1일</h3>
+  
+  <div class="section-title">1. 이름 선택</div>
+  <div class="btn-grid" id="userGroup">
+    <!-- 주로 사용하는 이름들 예시 (수정 가능) -->
+    <button onclick="selectUser(this)">이름1</button>
+    <button onclick="selectUser(this)">이름2</button>
+    <button onclick="selectUser(this)">이름3</button>
+    <button onclick="promptUser()">직접입력</button>
+  </div>
+
+  <div class="section-title">2. 근무 선택</div>
+  <div class="btn-grid" id="shiftGroup">
+    <button onclick="selectShift(this)">09:00</button>
+    <button onclick="selectShift(this)">13:00</button>
+    <button onclick="selectShift(this)">14:00</button>
+    <button onclick="selectShift(this)">15:00</button>
+    <button onclick="selectShift(this)">휴무</button>
+    <button onclick="selectShift(this)">연차</button>
+    <button onclick="openMemo()">메모</button>
+  </div>
+
+  <button class="save-btn" onclick="saveData()">저장하기</button>
+  <button class="del-btn" onclick="deleteData()">내 일정 삭제</button>
+  <button style="width:100%; margin-top:8px; background:none; color:#888;" onclick="closePopup()">취소</button>
+</div>
+
+<script>
+  let scheduleData = JSON.parse(localStorage.getItem("scheduleData") || "{}");
+  let selectedDay = null;
+  let selectedUser = "";
+  let selectedShift = "";
+  let selectedMemo = "";
+
+  const calendar = document.getElementById("calendar");
+  const popup = document.getElementById("popup");
+  const overlay = document.getElementById("overlay");
+
+  // 초기 달력 생성
+  function renderCalendar() {
+    calendar.innerHTML = "";
+    // 2026년 5월 1일은 금요일 (공백 5칸)
+    for(let s=0; s<5; s++) calendar.appendChild(document.createElement("div"));
+
+    for(let i=1; i<=31; i++) {
+      const key = `2026-05-${String(i).padStart(2,"0")}`;
+      const dayBox = document.createElement("div");
+      dayBox.className = "day";
+      dayBox.innerHTML = `<b>${i}</b>`;
+
+      if(scheduleData[key]) {
+        Object.keys(scheduleData[key]).forEach(user => {
+          const info = scheduleData[key][user];
+          const tag = document.createElement("div");
+          tag.className = `shift-tag ${getShiftClass(info.time)}`;
+          tag.innerText = `${user}: ${info.time}`;
+          dayBox.appendChild(tag);
+          if(info.memo) {
+            const m = document.createElement("div");
+            m.style.fontSize = "8px"; m.style.color = "#999";
+            m.innerText = `ㄴ ${info.memo}`;
+            dayBox.appendChild(m);
+          }
+        });
+      }
+      dayBox.onclick = () => openPopup(i);
+      calendar.appendChild(dayBox);
+    }
+  }
+
+  function getShiftClass(time) {
+    if(time === "13:00") return "pink";
+    if(time === "14:00") return "lavender";
+    if(time === "15:00") return "mint";
+    if(time === "휴무") return "off";
+    if(time === "연차") return "vacation";
+    return "etc";
+  }
+
+  function openPopup(day) {
+    selectedDay = day;
+    selectedUser = ""; selectedShift = ""; selectedMemo = "";
+    document.getElementById("targetDate").innerText = `5월 ${day}일 설정`;
+    resetButtons();
+    overlay.style.display = "block";
+    popup.style.display = "block";
+  }
+
+  function closePopup() {
+    overlay.style.display = "none";
+    popup.style.display = "none";
+  }
+
+  function selectUser(btn) {
+    document.querySelectorAll("#userGroup button").forEach(b => b.classList.remove("active"));
+    btn.classList.add("active");
+    selectedUser = btn.innerText;
+  }
+
+  function promptUser() {
+    const name = prompt("이름을 입력하세요");
+    if(name) {
+      selectedUser = name;
+      alert(`${name} 선택됨`);
+    }
+  }
+
+  function selectShift(btn) {
+    document.querySelectorAll("#shiftGroup button").forEach(b => b.classList.remove("active"));
+    btn.classList.add("active");
+    selectedShift = btn.innerText;
+  }
+
+  function openMemo() {
+    const m = prompt("메모를 입력하세요");
+    if(m !== null) selectedMemo = m;
+  }
+
+  function resetButtons() {
+    document.querySelectorAll(".popup button").forEach(b => b.classList.remove("active"));
+  }
+
+  function saveData() {
+    if(!selectedUser || !selectedShift) return alert("이름과 근무를 선택해주세요!");
+    const key = `2026-05-${String(selectedDay).padStart(2,"0")}`;
+    if(!scheduleData[key]) scheduleData[key] = {};
+    scheduleData[key][selectedUser] = { time: selectedShift, memo: selectedMemo };
+    
+    localStorage.setItem("scheduleData", JSON.stringify(scheduleData));
+    renderCalendar();
+    closePopup();
+  }
+
+  function deleteData() {
+    if(!selectedUser) return alert("삭제할 이름을 먼저 선택해주세요!");
+    const key = `2026-05-${String(selectedDay).padStart(2,"0")}`;
+    if(scheduleData[key] && scheduleData[key][selectedUser]) {
+      delete scheduleData[key][selectedUser];
+      localStorage.setItem("scheduleData", JSON.stringify(scheduleData));
+      renderCalendar();
+      closePopup();
+    }
+  }
+
+  window.onload = renderCalendar;
+</script>
+</body>
+</html>
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Work Schedule 2026</title>
+
+<style>
 body { font-family:-apple-system, sans-serif; margin:0; background:#f7f7f7; color:#333; }
 
 /* 닉네임 입력 레이어 */
