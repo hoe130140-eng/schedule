@@ -2,6 +2,266 @@
 <html lang="ko">
 <head>
 <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Work Schedule 2026</title>
+
+<style>
+body { font-family:-apple-system, sans-serif; margin:0; background:#f7f7f7; color:#333; }
+
+/* 닉네임 입력 레이어 */
+#nameBox {
+  position:fixed; top:0; left:0; right:0; bottom:0;
+  background:white; display:flex; flex-direction:column;
+  justify-content:center; align-items:center; z-index:999;
+}
+
+input {
+  padding:15px; margin:10px; border-radius:10px;
+  border:1px solid #ddd; font-size:16px; width:200px;
+}
+
+button {
+  margin-top:10px; padding:12px 25px; border:none;
+  border-radius:10px; background:#333; color:white;
+  font-weight:bold; cursor:pointer;
+}
+
+button:active { background:#555; }
+
+/* 헤더 */
+header { padding:20px; text-align:center; background:white; border-bottom:1px solid #eee; }
+#title { font-size:22px; font-weight:bold; color:#007aff; }
+#userDisplay { font-size:13px; color:#888; margin-top:5px; }
+
+/* 달력 */
+.calendar {
+  display:grid; grid-template-columns: repeat(7, 1fr);
+  gap:5px; padding:10px;
+}
+
+.day {
+  background:white; border-radius:10px; padding:8px;
+  min-height:90px; font-size:11px; box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+  cursor: pointer;
+}
+
+.day b { font-size:14px; margin-bottom:5px; display:block; }
+
+/* 근무 색상 */
+.shift-item { padding:2px 4px; border-radius:4px; margin-top:2px; font-weight:600; }
+.pink {background:#ffd6e7; color:#d63384;}
+.lavender {background:#e6dcff; color:#6f42c1;}
+.mint {background:#d6fff5; color:#0f5132;}
+.off {background:#f3e5d8; color:#856404;}
+.vacation {background:#dfffdc; color:#155724;}
+.etc {background:#e1f5fe; color:#0288d1;}
+
+/* 팝업 */
+.overlay { position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.5); display:none; z-index:100; }
+.popup {
+  position:fixed; bottom:0; left:0; right:0;
+  background:white; padding:20px; border-radius:20px 20px 0 0;
+  display:none; z-index:101; text-align:center;
+}
+.popup-btns { display:grid; grid-template-columns: repeat(3, 1fr); gap:10px; margin-top:15px; }
+.popup-btns button { margin:0; padding:15px 5px; font-size:14px; background:#f0f0f0; color:#333; }
+.close-btn { background:#ff3b30 !important; color:white !important; width:100%; margin-top:15px; }
+</style>
+</head>
+
+<body>
+
+<div id="nameBox">
+  <h2>Schedule Manager</h2>
+  <input id="nickname" placeholder="이름을 입력하세요" maxlength="10"/>
+  <button id="startBtn" type="button">시작하기</button>
+</div>
+
+<header>
+  <div id="title"></div>
+  <div id="userDisplay"></div>
+</header>
+
+<div class="calendar" id="calendar"></div>
+
+<div id="overlay" class="overlay"></div>
+<div id="popup" class="popup">
+  <h3 id="popupDate">근무 선택</h3>
+  <div class="popup-btns" id="shiftOptions"></div>
+  <button class="close-btn" id="closePopup">닫기</button>
+</div>
+
+<script>
+document.addEventListener("DOMContentLoaded", function() {
+    /* ===== 상태 관리 ===== */
+    let currentUser = "";
+    let scheduleData = {};
+    const baseDate = new Date('2026-05-11');
+
+    // DOM 요소
+    const nameBox = document.getElementById("nameBox");
+    const nicknameInput = document.getElementById("nickname");
+    const startBtn = document.getElementById("startBtn");
+    const calendar = document.getElementById("calendar");
+    const popup = document.getElementById("popup");
+    const overlay = document.getElementById("overlay");
+
+    /* ===== 초기 로딩 ===== */
+    try {
+        currentUser = localStorage.getItem("user") || "";
+        scheduleData = JSON.parse(localStorage.getItem("scheduleData") || "{}");
+        
+        if(currentUser) {
+            nameBox.style.display = "none";
+            initApp();
+        }
+    } catch(e) {
+        console.error("Storage Error:", e);
+    }
+
+    /* ===== 이벤트 리스너 ===== */
+    startBtn.addEventListener("click", startApp);
+    nicknameInput.addEventListener("keypress", (e) => { if(e.key === "Enter") startApp(); });
+    document.getElementById("closePopup").addEventListener("click", closePopup);
+    overlay.addEventListener("click", closePopup);
+
+    function startApp() {
+        const name = nicknameInput.value.trim();
+        if(!name) {
+            alert("이름을 입력해줘!");
+            return;
+        }
+        currentUser = name;
+        try {
+            localStorage.setItem("user", name);
+            nameBox.style.display = "none";
+            initApp();
+        } catch(e) {
+            alert("로컬 저장소 사용이 차단되어 있습니다. 브라우저 설정을 확인해주세요.");
+        }
+    }
+
+    function initApp() {
+        document.getElementById("userDisplay").innerText = `Logged in as: ${currentUser}`;
+        renderHeader();
+        renderCalendar();
+    }
+
+    function renderHeader() {
+        const now = new Date();
+        const diff = now - baseDate;
+        const days = diff/(1000*60*60*24);
+        const p = 10 + Math.floor(days/28);
+        document.getElementById("title").innerText = `2026.${p}P Schedule`;
+    }
+
+    function renderCalendar() {
+        calendar.innerHTML = "";
+        // 2026년 5월은 금요일(5)부터 시작
+        for(let s=0; s<5; s++) {
+            calendar.appendChild(document.createElement("div"));
+        }
+
+        for(let i=1; i<=31; i++) {
+            const key = `2026-05-${String(i).padStart(2,"0")}`;
+            const dayData = scheduleData[key] || {};
+
+            const div = document.createElement("div");
+            div.className = "day";
+            div.innerHTML = `<b>${i}</b>`;
+
+            Object.keys(dayData).forEach(user => {
+                const d = dayData[user];
+                const row = document.createElement("div");
+                row.className = "shift-item";
+                
+                if(d.time === "13:00") row.classList.add("pink");
+                else if(d.time === "14:00") row.classList.add("lavender");
+                else if(d.time === "15:00") row.classList.add("mint");
+                else if(d.time === "휴무") row.classList.add("off");
+                else if(d.time === "연차") row.classList.add("vacation");
+                else row.classList.add("etc");
+
+                row.innerText = `${user}: ${d.time || ""}`;
+                div.appendChild(row);
+                
+                if(d.memo) {
+                    const memoSpan = document.createElement("div");
+                    memoSpan.style.fontSize = "9px";
+                    memoSpan.style.color = "#999";
+                    memoSpan.innerText = `* ${d.memo}`;
+                    div.appendChild(memoSpan);
+                }
+            });
+
+            div.onclick = () => openPopup(i);
+            calendar.appendChild(div);
+        }
+    }
+
+    function openPopup(day) {
+        document.getElementById("popupDate").innerText = `5월 ${day}일 설정`;
+        const container = document.getElementById("shiftOptions");
+        container.innerHTML = "";
+
+        const options = ["09:00", "13:00", "14:00", "15:00", "휴무", "연차", "메모", "삭제"];
+        options.forEach(opt => {
+            const btn = document.createElement("button");
+            btn.innerText = opt;
+            btn.onclick = () => {
+                if(opt === "메모") {
+                    const m = prompt("메모를 입력하세요");
+                    if(m !== null) save(day, {memo: m});
+                } else if(opt === "삭제") {
+                    if(confirm("내 일정을 삭제할까요?")) {
+                        if(scheduleData[`2026-05-${String(day).padStart(2,"0")}`]) {
+                            delete scheduleData[`2026-05-${String(day).padStart(2,"0")}`][currentUser];
+                            saveToStore();
+                        }
+                    }
+                } else {
+                    save(day, {time: opt});
+                }
+                closePopup();
+            };
+            container.appendChild(btn);
+        });
+
+        overlay.style.display = "block";
+        popup.style.display = "block";
+    }
+
+    function closePopup() {
+        overlay.style.display = "none";
+        popup.style.display = "none";
+    }
+
+    function save(day, obj) {
+        const key = `2026-05-${String(day).padStart(2,"0")}`;
+        if(!scheduleData[key]) scheduleData[key] = {};
+        if(!scheduleData[key][currentUser]) scheduleData[key][currentUser] = {};
+        
+        Object.assign(scheduleData[key][currentUser], obj);
+        saveToStore();
+    }
+
+    function saveToStore() {
+        try {
+            localStorage.setItem("scheduleData", JSON.stringify(scheduleData));
+            renderCalendar();
+        } catch(e) {
+            console.error("Save Error:", e);
+        }
+    }
+});
+</script>
+
+</body>
+</html>
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Schedule</title>
 
