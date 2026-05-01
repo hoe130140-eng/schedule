@@ -1,0 +1,299 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Team Schedule</title>
+
+<style>
+body { font-family:-apple-system; margin:0; background:#f7f7f7; }
+
+/* 닉네임 입력 */
+#nameBox {
+  position:fixed;
+  top:0; left:0; right:0; bottom:0;
+  background:white;
+  display:flex;
+  flex-direction:column;
+  justify-content:center;
+  align-items:center;
+}
+
+input {
+  padding:10px;
+  margin:5px;
+  border-radius:10px;
+  border:1px solid #ddd;
+}
+
+/* 헤더 */
+header { padding:15px; text-align:center; }
+#title { font-size:20px; font-weight:bold; }
+#notice { color:#666; margin-top:5px; }
+
+/* 달력 */
+.calendar {
+  display:grid;
+  grid-template-columns: repeat(7,1fr);
+  gap:6px;
+  padding:10px;
+}
+
+.day {
+  background:white;
+  border-radius:12px;
+  padding:6px;
+  min-height:90px;
+  font-size:11px;
+}
+
+.userRow {
+  margin-top:3px;
+  padding:2px;
+  border-radius:6px;
+  font-size:10px;
+}
+
+/* 파스텔 */
+.pink {background:#ffd6e7;}
+.mint {background:#d6fff5;}
+.lavender {background:#e6dcff;}
+.off {background:#f3e5d8;}
+.vacation {background:#dfffdc;}
+
+/* 팝업 */
+.popup {
+  position:fixed;
+  bottom:0;
+  left:0;
+  right:0;
+  background:white;
+  padding:15px;
+  border-radius:20px 20px 0 0;
+}
+
+button {
+  margin:4px;
+  padding:8px;
+  border:none;
+  border-radius:10px;
+}
+</style>
+</head>
+
+<body>
+
+<div id="nameBox">
+  <h2>닉네임 입력</h2>
+  <input id="nickname" placeholder="이름 입력"/>
+  <button onclick="saveName()">시작하기</button>
+</div>
+
+<header>
+  <div id="title"></div>
+  <div id="notice"></div>
+</header>
+
+<div class="calendar" id="calendar"></div>
+<div id="popup" class="popup" style="display:none;"></div>
+
+<script type="module">
+
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
+import { getDatabase, ref, set, onValue } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-database.js";
+
+/* 🔥 Firebase */
+const firebaseConfig = {
+  apiKey: "여기넣기",
+  authDomain: "여기넣기",
+  databaseURL: "여기넣기",
+  projectId: "여기넣기"
+};
+
+const app = initializeApp(firebaseConfig);
+const db = getDatabase(app);
+
+/* 닉네임 */
+let currentUser = localStorage.getItem("user");
+
+if(currentUser){
+  document.getElementById("nameBox").style.display="none";
+}
+
+window.saveName = function(){
+  const name = document.getElementById("nickname").value;
+  if(!name) return alert("이름 입력");
+
+  currentUser = name;
+  localStorage.setItem("user", name);
+  document.getElementById("nameBox").style.display="none";
+};
+
+/* 피리어드 */
+const baseDate = new Date('2026-05-11');
+
+function getPeriodInfo(date){
+  const diff = date - baseDate;
+  const days = diff/(1000*60*60*24);
+  const p = 10 + Math.floor(days/28);
+  return `${date.getFullYear()}.${p}P`;
+}
+
+/* 상태 */
+let scheduleData = {};
+let noticeText = "응원 문구🔥";
+
+/* 헤더 */
+function renderHeader(){
+  document.getElementById("title").innerText = getPeriodInfo(new Date());
+  document.getElementById("notice").innerText = noticeText;
+}
+
+document.getElementById("notice").onclick = ()=>{
+  const t = prompt("문구 수정", noticeText);
+  if(t){
+    noticeText = t;
+    set(ref(db,"notice"),t);
+  }
+};
+
+/* 달력 */
+const calendar = document.getElementById("calendar");
+const popup = document.getElementById("popup");
+
+function renderCalendar(){
+  calendar.innerHTML="";
+
+  for(let i=1;i<=31;i++){
+    const dateKey = `2026-05-${String(i).padStart(2,"0")}`;
+    const dayData = scheduleData[dateKey] || {};
+
+    const div = document.createElement("div");
+    div.className="day";
+    div.innerHTML=`<b>${i}</b>`;
+
+    Object.keys(dayData).forEach(user=>{
+      const d = dayData[user];
+      const row = document.createElement("div");
+      row.className="userRow";
+
+      if(d.time==="13:00") row.classList.add("pink");
+      if(d.time==="14:00") row.classList.add("lavender");
+      if(d.time==="15:00") row.classList.add("mint");
+      if(d.time==="휴무") row.classList.add("off");
+      if(d.time==="연차") row.classList.add("vacation");
+
+      row.innerText = `${user} ${d.time||""}`;
+
+      if(d.memo){
+        row.innerText += ` (${d.memo})`;
+      }
+
+      div.appendChild(row);
+    });
+
+    let timer;
+
+    div.onmousedown = ()=>{
+      timer=setTimeout(()=>openWorkPopup(i),500);
+    };
+
+    div.onmouseup = ()=>{
+      clearTimeout(timer);
+      openMemo(i);
+    };
+
+    calendar.appendChild(div);
+  }
+}
+
+/* 근무 선택 */
+function openWorkPopup(day){
+  popup.style.display="block";
+  popup.innerHTML="<h3>근무 선택</h3>";
+
+  const options=[
+    "06:00","07:00","08:00","09:00",
+    "10:00","11:00","12:00","13:00","14:00","15:00",
+    "휴무","연차"
+  ];
+
+  options.forEach(opt=>{
+    const btn=document.createElement("button");
+    btn.innerText=opt;
+
+    btn.onclick=()=>{
+      save(day,{time:opt});
+      popup.style.display="none";
+    };
+
+    popup.appendChild(btn);
+  });
+}
+
+/* 메모 */
+function openMemo(day){
+  const memo=prompt("메모 입력");
+  if(memo!==null){
+    save(day,{memo});
+  }
+}
+
+/* 저장 */
+function save(day,obj){
+  const key=`2026-05-${String(day).padStart(2,"0")}`;
+
+  const prev = (scheduleData[key] && scheduleData[key][currentUser]) || {};
+  const newData = {...prev,...obj};
+
+  set(ref(db,`schedule/${key}/${currentUser}`),newData);
+}
+
+/* 실시간 */
+onValue(ref(db,"schedule"), snap=>{
+  scheduleData = snap.val() || {};
+  renderCalendar();
+});
+
+onValue(ref(db,"notice"), snap=>{
+  noticeText = snap.val() || noticeText;
+  renderHeader();
+});
+
+renderHeader();
+
+</script>
+
+</body>
+</html><!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Team Schedule</title>
+
+<style>
+body { font-family:-apple-system; margin:0; background:#f7f7f7; }
+
+/* 닉네임 입력 */
+#nameBox {
+  position:fixed;
+  top:0; left:0; right:0; bottom:0;
+  background:white;
+  display:flex;
+  flex-direction:column;
+  justify-content:center;
+  align-items:center;
+}
+
+input {
+  padding:10px;
+  margin:5px;
+  border-radius:10px;
+  border:1px solid #ddd;
+}
+
+/* 헤더 */
+header { padding:15px; text-align:center; }
+#title { font-size:20px; font-weight:bold; }
+#notice { color:#666; margin-top:5px; }
